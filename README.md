@@ -1,6 +1,6 @@
 # modern-requirements
 
-用结构化 JSON 向 `web-infra-dev/modern.js` 提交功能需求。CLI 将需求保存为 GitHub Issue，使用 Modern.js 的功能建议标题、正文格式和标签。编辑直接更新 Issue，审批和进度记录在标签中，验收证据记录在状态流转评论中。
+用结构化 JSON 向 `web-infra-dev/modern.js` 提交功能需求。CLI 将需求保存为 GitHub Issue，使用 Modern.js 的功能建议标题、正文格式和标签。编辑直接更新 Issue，审批和进度记录在标签中。所有状态流转评论仅保留标题、状态流转和简短原因：完成时标题为“需求完成报告”，其他流转为“需求状态更新”。完成前仍需提交完整验收报告，取消和恢复仍需提交人类确认，供 CLI 校验；评论不保存报告 JSON、验收明细、检查结果或人类确认对象。
 
 ## 安装
 

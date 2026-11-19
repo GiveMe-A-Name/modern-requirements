@@ -764,10 +764,11 @@ class Requirements:
         return result
 
     def _post_transition_comment(self, number: int, event: dict) -> str:
+        title = "需求完成报告" if event["to"] == "done" else "需求状态更新"
         body = (
-            "## Requirement update\n\n```json\n"
-            + json.dumps(event, ensure_ascii=False, indent=2)
-            + "\n```\n"
+            f"## {title}\n\n"
+            f"状态流转：{event['from']} → {event['to']}\n\n"
+            f"原因：{event['reason']}\n"
         )
         try:
             comment = self._request(
@@ -950,15 +951,10 @@ class Requirements:
                 "INVALID_INPUT", "report is only used when finishing", exit_code=2
             )
         event = {
-            "kind": "transition",
             "from": current,
             "to": to_status,
             "reason": reason,
         }
-        if report is not None:
-            event["completion_report"] = report
-        if confirmation is not None:
-            event["human_confirmation"] = confirmation
         return self._apply(issue, requirement, to_status, transition_event=event)
 
     def edit(self, number: int, value: Any = ..., *, approve: bool = False) -> dict:
@@ -1144,8 +1140,13 @@ _STATES_HELP = """States and claims:
   Creation starts at todo. Doing means claimed; blocked keeps work reserved.
   Only approved work with complete acceptance may enter doing. Other agents
   choose approved todo work. Release to todo makes approved work available again.
-  Record reasons in English. Block/release reasons include the obstacle,
-  progress, and next action for handoff. History stays in ordinary comments.
+  Record reasons in English. For done, use one concise sentence naming the
+  merged PRs (if any) and confirming all acceptance conditions passed; do not
+  repeat acceptance details, evidence, or check output in the reason.
+  Block/release reasons include the obstacle, progress, and next action for
+  handoff. All transition comments use Markdown with only a title, status
+  transition, and reason. Done uses the title "需求完成报告"; other transitions
+  use "需求状态更新". Keep reasons concise and do not paste input JSON.
   Active statuses normally map to open Issues; done to closed/completed;
   cancelled to closed/not_planned. A doing Issue may also be closed/completed
   after GitHub auto-close, while acceptance bookkeeping is still pending.
@@ -1224,10 +1225,12 @@ Completion reports (--report FILE, or - for stdin):
   Missing, duplicated, failed, unknown, or changed acceptance results are rejected.
   Evidence is either {"kind":"inline","content":"actual observations"} or
   {"kind":"url","url":"https://...","description":"what this proves"}.
-  The report is saved in an Issue comment before marking done (and before
-  closing an Issue that is still open). GitHub may already have closed it.
-  Inline observations become durable there. A temporary local path alone
-  is insufficient evidence.
+  The report is validated but its JSON, acceptance details, evidence, and
+  checks are not saved in the Issue. The CLI posts a minimal Markdown completion
+  comment containing only a title, status transition, and the supplied reason
+  before marking done (and before closing an Issue that is still open).
+  GitHub may already have closed it. A temporary local path alone is
+  insufficient evidence; inline evidence must include actual observations.
   repository_changes is a required boolean. If true, include nonempty checks
   and pull_requests. Each check has command, result="passed", actual_result,
   and evidence. pull_requests contains positive PR numbers; the CLI verifies
@@ -1243,6 +1246,8 @@ _CONFIRMATION_HELP = """Human confirmation (--confirmation FILE, or - for stdin)
   current conversation, then record where and when it was given. Do not invent
   confirmation or cancel because work is difficult or blocked. There is no
   force flag. The CLI cannot authenticate a conversation supplied by an agent.
+  The confirmation object is validated but not saved in the Issue comment;
+  summarize the human's cancellation or restoration decision in the reason.
   Missing/invalid confirmation fails with HUMAN_CONFIRMATION_REQUIRED.
 """
 
@@ -1459,7 +1464,7 @@ def build_parser() -> argparse.ArgumentParser:
     transition.add_argument(
         "--reason",
         required=True,
-        help="English reason; include progress and next action for block/release",
+        help="English reason; one concise sentence for done; include progress and next action for block/release",
     )
     transition.add_argument(
         "--report",

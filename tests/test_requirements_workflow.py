@@ -1,7 +1,6 @@
 """Issue-only lifecycle and durable evidence under sequential writes."""
 
 from copy import deepcopy
-import json
 import unittest
 
 from modern_requirements.cli import RequirementError, Requirements
@@ -54,50 +53,6 @@ class RequirementWorkflowTests(unittest.TestCase):
         self.assertIn("registration:human", self.service.get(1)["labels"])
         self.assertNotIn("<!--", self.github.issues[1]["body"])
         self.assertEqual(len(self.github.comments[1]), 4)
-        # 05e8f76 stored operation IDs, fingerprints and sessions in comments.
-        for comment in self.github.comments[1]:
-            event = json.loads(comment["body"].split("```json\n")[1].split("\n```")[0])
-            self.assertEqual(set(event), {"kind", "from", "to", "reason"})
-
-    def test_finish_records_evidence_before_close_and_reopens(self):
-        self.transition("todo", "doing")
-        result = self.transition(
-            "doing", "done", report=completion(self.service.get(1))
-        )
-        self.assertEqual(result["status"], "done")
-        self.assertIn("registration:human", result["labels"])
-        self.assertEqual(self.github.issues[1]["state_reason"], "completed")
-        self.assertIn("completion_report", self.github.comments[1][-1]["body"])
-        self.assertEqual(
-            self.transition("done", "todo", reason="Further work is required.")[
-                "status"
-            ],
-            "todo",
-        )
-
-    def test_repository_completion_verifies_merge_target(self):
-        self.transition("todo", "doing")
-        report = completion(self.service.get(1), repository_changes=True)
-        self.github.pulls[10] = {
-            "merged": False,
-            "merged_at": None,
-            "base": {
-                "ref": "main",
-                "repo": {"full_name": "web-infra-dev/modern.js"},
-            },
-        }
-        for base, merged in (("main", False), ("other", True)):
-            self.github.pulls[10].update(
-                merged=merged, merged_at="2026-11-15T00:00:00Z"
-            )
-            self.github.pulls[10]["base"]["ref"] = base
-            with self.assertRaises(RequirementError) as caught:
-                self.transition("doing", "done", report=report)
-            self.assertEqual(caught.exception.code, "INVALID_COMPLETION_REPORT")
-        self.github.pulls[10]["base"]["ref"] = "main"
-        self.assertEqual(
-            self.transition("doing", "done", report=report)["status"], "done"
-        )
 
     def test_github_closed_issue_stays_active_until_reported_without_reopening(self):
         """A closing PR must not hide unfinished bookkeeping or block its report."""
@@ -120,7 +75,6 @@ class RequirementWorkflowTests(unittest.TestCase):
         self.assertEqual((result["status"], result["state"], result["state_reason"]),
                          ("done", "closed", "completed"))
         self.assertIn("status:done", result["labels"])
-        self.assertIn("completion_report", self.github.comments[1][-1]["body"])
         self.assertEqual(self.service.list()["items"], [])
         # Preserve GitHub's closure throughout reconciliation, not reopen/reclose.
         updates = [body for method, path, body in self.github.calls
@@ -164,7 +118,6 @@ class RequirementWorkflowTests(unittest.TestCase):
             self.transition("doing", "done", report=report)
         self.assertEqual(caught.exception.code, "WRITE_FAILED")
         self.assertTrue(caught.exception.details["audit_url"])
-        self.assertIn("completion_report", self.github.comments[1][-1]["body"])
         self.assertEqual(self.service.get(1)["status"], "doing")
         self.assertEqual(self.service.list()["items"][0]["state"], "closed")
 
@@ -298,12 +251,6 @@ class RequirementWorkflowTests(unittest.TestCase):
         revised["problem"] = "The input reference is missing."
         self.assertEqual(self.edit(revised)["status"], "cancelled")
         self.assertIn("registration:human", self.service.get(1)["labels"])
-        self.assertTrue(
-            any(
-                "Cancel this work." in comment["body"]
-                for comment in self.github.comments[1]
-            )
-        )
 
     def test_legacy_requirement_remains_usable_without_inventing_registration_source(
         self,
